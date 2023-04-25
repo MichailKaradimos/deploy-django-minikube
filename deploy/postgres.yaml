@@ -1,0 +1,93 @@
+
+# This section specifies the API version, kind, metadata, and labels for the Service. 
+# The Service is named django-postgres and has a label of app: django.
+apiVersion: v1
+kind: Service
+metadata:
+  name: django-postgres
+  labels:
+    app: django
+
+    # The selector field specifies which pods the Service should target, in this case pods labeled with app: django and tier: postgres.
+    #  The clusterIP field is set to None, which means that the Service is only accessible from within the cluster.
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: django
+    tier: postgres
+  clusterIP: None
+
+---
+# This section specifies the API version, kind, metadata, and labels for the PVC. 
+The PVC is named django-postgres-pvc and has a label of app: django.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: django-postgres-pvc
+  labels:
+    app: django
+
+    # The PVC is set to ReadWriteOnce, which means that it can be mounted as read-write by a single node in the cluster. 
+    # The PVC requests 10 gigabytes of storage.
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+
+apiVersion: apps/v1
+# This section specifies the API version, kind, metadata, and labels for the deployment. 
+# The deployment is named postgres and has a label of app: django-postgres.
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: django-postgres
+spec:
+# This section specifies the selector and deployment strategy for the deployment. 
+# The selector matches pods with labels app: django and tier: postgres, and the deployment strategy is set to Recreate.
+  selector:
+    matchLabels:
+      app: django
+      tier: postgres
+  strategy:
+    type: Recreate
+    # This section specifies the template for the pods that will be created by the deployment. 
+  template:
+    metadata:
+      labels:
+        app: django
+        tier: postgres
+    spec:
+    # The template includes a label selector that matches the deployment's selector,
+    #  and specifies a persistent volume claim named django-postgres-pvc to be mounted at /var/lib/postgresql/data in the container. 
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: django-postgres-pvc
+      containers:
+        - image: postgres:15.2
+          name: postgres
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+              #  Has environment variables POSTGRES_DB, POSTGRES_USER, 
+              # and POSTGRES_PASSWORD set to djangodb, djangouser, and the value of the db-password secret's password key, respectively.
+          env:
+            - name: POSTGRES_DB
+              value: djangodb
+            - name: POSTGRES_USER
+              value: djangouser
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-password
+                  key: password
+                  # The data stored in the /var/lib/postgresql/data directory in the container will be persisted in the django-postgres-pvc volume. 
